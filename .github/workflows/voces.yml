@@ -1,0 +1,87 @@
+# Genera las voces de AZBUKA (Silero v5_5_ru, AAC 48 kbps) y las publica en este repo.
+# Lee la app de manum876/Azbuka_v3: la lista de textos (herramientas/voces/inventario.js)
+# y el generador (herramientas/voces/generar-voces.py) viven allá.
+# Se corre a mano: Actions → «Voces» → Run workflow. Solo hace los audios que faltan,
+# y borra los de textos que ya no están en la app.
+name: Voces
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  generar:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 340
+    strategy:
+      fail-fast: false
+      matrix:
+        parte: [0, 1, 2, 3, 4, 5, 6, 7]
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: voces
+      - uses: actions/checkout@v5
+        with:
+          repository: manum876/Azbuka_v3
+          path: app
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - name: Instalar lo necesario
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+          pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu
+          pip install --quiet numpy omegaconf
+      - name: Lista de textos
+        run: node app/herramientas/voces/inventario.js app lista.json todo
+      - name: Generar los audios que faltan (parte ${{ matrix.parte }} de 8)
+        run: |
+          mkdir -p voces/v1 nuevos
+          python app/herramientas/voces/generar-voces.py audios lista.json voces/v1 nuevos ${{ matrix.parte }} 8
+      - uses: actions/upload-artifact@v4
+        with:
+          name: parte-${{ matrix.parte }}
+          path: nuevos
+          if-no-files-found: ignore
+          retention-days: 2
+  publicar:
+    needs: generar
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: voces
+      - uses: actions/checkout@v5
+        with:
+          repository: manum876/Azbuka_v3
+          path: app
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: parte-*
+          merge-multiple: true
+          path: voces/v1
+      - name: Índice
+        run: |
+          node app/herramientas/voces/inventario.js app lista.json todo
+          mkdir -p voces/v1
+          python app/herramientas/voces/generar-voces.py indice lista.json voces/v1
+          touch voces/.nojekyll
+      - name: Guardar en el repo
+        run: |
+          cd voces
+          git config user.name "Azbuka (voces)"
+          git config user.email "azbuka.aprenderuso@gmail.com"
+          git add -A
+          git diff --cached --quiet && echo "No hay cambios" || git commit -q -m "Voces (Silero)"
+          git push
