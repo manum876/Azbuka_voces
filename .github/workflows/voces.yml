@@ -40,10 +40,13 @@ jobs:
       - name: Lista de textos
         run: node app/herramientas/voces/inventario.js app lista.json todo
       - name: Generar los audios que faltan (parte ${{ matrix.parte }} de 16)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           mkdir -p voces/v1 nuevos
           python app/herramientas/voces/generar-voces.py audios lista.json voces/v1 nuevos ${{ matrix.parte }} 16
       - uses: actions/upload-artifact@v7
+        if: always()
         with:
           name: parte-${{ matrix.parte }}
           path: nuevos
